@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools==73.0.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "punquote"
+dynamic = ["version"]
+dependencies = [
+    "pyrogram==2.0.106",
+    "tgcrypto==1.2.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff==0.6.1",
+]
+
+[tool.setuptools.dynamic]
+version = {attr = "punquote.__version__"}
+
+[tool.ruff.lint]
+select = [
+    "A",      # flake8-builtins
+    "ARG",    # flake8-unused-arguments
+    "ASYNC",  # flake8-async
+    "B",      # flake8-bugbear
+    "BLE",    # flake8-blind-except
+    "C4",     # flake8-comprehensions
+    "C90",    # mccabe
+    "COM",    # flake8-commas
+    "DTZ",    # flake8-datetimez
+    "E",      # pycodestyle errors
+    "ERA",    # eradicate
+    "F",      # pyflakes
+    "FBT",    # flake8-boolean-trap
+    "FLY",    # flynt
+    "FURB",   # refurb
+    "I",      # isort
+    "ICN",    # flake8-import-conventions
+    "INT",    # flake8-gettext
+    "ISC",    # flake8-implicit-str-concat
+    "N",      # pep8-naming
+    "PERF",   # perflint
+    "PIE",    # flake8-pie
+    "PYI",    # flake8-pyi
+    "Q",      # flake8-quotes
+    "R",      # refactor
+    "RET",    # flake8-return
+    "RSE",    # flake8-raise
+    "RUF",    # ruff
+    "S",      # flake8-bandit
+    "SIM",    # flake8-simplify
+    "T20",    # flake8-print
+    "UP",     # pyupgrade
+    "W",      # pycodestyle warnings
+]
+
+[tool.ruff.lint.isort]
+force-single-line = true
