@@ -1,4 +1,6 @@
-.venv
-punquote.egg-info
+*.session
+.env
 .ruff_cache
+.venv
 __pycache__
+punquote.egg-info

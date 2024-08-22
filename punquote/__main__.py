@@ -1,6 +1,5 @@
-import logging
-
-logger = logging.getLogger()
+from . import bot
 
 if __name__ == "__main__":
-    logger.info("Hello, world!")
+    app = bot.get_bot()
+    app.run()
