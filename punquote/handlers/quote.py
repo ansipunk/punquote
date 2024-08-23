@@ -1,10 +1,11 @@
 import base64
 import contextlib
 import io
-import json
 
-import httpx
+import aiohttp
+import orjson
 import pyrogram
+import pyrogram.enums
 import pyrogram.filters
 import pyrogram.types
 
@@ -62,14 +63,17 @@ def _get_start_and_end_message_ids(
     return message_start_id, message_end_id
 
 
-def _prepare_message_author_for_quotly_api(author: pyrogram.types.User) -> dict:
+def _prepare_message_author(message: pyrogram.types.Message) -> dict:
+    author = message.forward_from if message.forward_from else message.from_user
+
     name = author.first_name
     if author.last_name:
         name = f"{name} {author.last_name}"
 
     prepared_author = {
-        "id": 1,
+        "id": author.id,
         "name": name,
+        "type": "public",
     }
 
     if author.photo:
@@ -83,7 +87,7 @@ def _prepare_message_author_for_quotly_api(author: pyrogram.types.User) -> dict:
     return prepared_author
 
 
-def _prepare_message_media_for_quotly_api(
+def _prepare_message_media(
     message: pyrogram.types.Message,
     *,
     preserve_media: bool,
@@ -91,18 +95,15 @@ def _prepare_message_media_for_quotly_api(
     media = None
     media_type = None
 
-    if (
-        (
-            message.sticker
-            and not message.sticker.is_animated
-            and not message.sticker.is_video
-        ) or preserve_media
-    ):
+    if message.sticker or preserve_media:
         content = None
 
         if message.sticker:
-            content = message.sticker
-            media_type = "sticker"
+            sticker = message.sticker
+
+            if not sticker.is_animated and not sticker.is_video:
+                content = sticker
+                media_type = "sticker"
         if message.photo:
             content = message.photo
         elif message.video and message.video.thumbs:
@@ -122,16 +123,16 @@ def _prepare_message_media_for_quotly_api(
     return media_type, media
 
 
-def _prepare_message_for_quotly_api(
+def _prepare_message(
     message: pyrogram.types.Message,
     *,
     preserve_media: bool,
 ) -> dict | None:
-    author = _prepare_message_author_for_quotly_api(message.from_user)
-    media_type, media = _prepare_message_media_for_quotly_api(
-        message,
-        preserve_media=preserve_media,
-    )
+    if not message or not message.from_user:
+        return None
+
+    author = _prepare_message_author(message)
+    media_type, media = _prepare_message_media(message, preserve_media=preserve_media)
 
     text = None
     if message.text:
@@ -141,9 +142,10 @@ def _prepare_message_for_quotly_api(
         return None
 
     prepared_message = {
-        "chatId": 1,
-        "avatar": "photo" in author,
+        "chatId": message.chat.id,
+        "avatar": True,
         "from": author,
+        "name": author["name"],
     }
 
     if text:
@@ -154,8 +156,8 @@ def _prepare_message_for_quotly_api(
         prepared_message["mediaType"] = media_type
 
     if message.reply_to_message:
-        prepared_message["replyMessage"] = _prepare_message_media_for_quotly_api(
-            message,
+        prepared_message["replyMessage"] = _prepare_message(
+            message.reply_to_message,
             preserve_media=preserve_media,
         )
 
@@ -170,10 +172,7 @@ async def _get_base64_sticker_from_quotly_api(
     messages_to_quote = []
 
     for message in messages:
-        message_to_quote = _prepare_message_for_quotly_api(
-            message,
-            preserve_media=preserve_media,
-        )
+        message_to_quote = _prepare_message(message, preserve_media=preserve_media)
 
         if message_to_quote:
             messages_to_quote.append(message_to_quote)
@@ -186,28 +185,34 @@ async def _get_base64_sticker_from_quotly_api(
         "format": "webp",
         "width": 512,
         "height": 512,
+        "scale": 1,
         "messages": messages_to_quote,
     }
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
+    async with aiohttp.ClientSession() as client:  # noqa: SIM117
+        async with client.post(
             config.quotly.url,
-            json=request_body,
-            params={"botToken": config.telegram.bot_token},
+            data=orjson.dumps(request_body),
             headers={"Content-Type": "application/json"},
-        )
+            params={"botToken": config.telegram.bot_token},
+        ) as response:
+            response_status = response.status
+            response_body = await response.read()
 
     try:
-        response_body = response.json()
-    except json.JSONDecodeError:
+        response_body = orjson.loads(response_body)
+    except orjson.JSONDecodeError:
+        response_body = response_body.decode("utf-8")
+
+    if isinstance(response_body, str):
         error_message = (
             "API is down"
-            if "cloudflare" in response.text
-            else response.text
+            if "cloudflare" in response_body
+            else response_body
         )
 
         raise QuotlyServerError(
-            error_code=response.status_code,
+            error_code=response_status,
             error_message=error_message,
         )
 
@@ -250,6 +255,11 @@ async def quote_handler(
     if not messages_to_quote:
         return
 
+    await client.send_chat_action(
+        message.chat.id,
+        pyrogram.enums.ChatAction.CHOOSE_STICKER,
+    )
+
     try:
         sticker_base64 = await _get_base64_sticker_from_quotly_api(
             messages_to_quote,
@@ -261,6 +271,12 @@ async def quote_handler(
             text=f"Quotly server error. Code {e.error_code}: {e.error_message}",
             reply_to_message_id=message.id,
         )
+
+        await client.send_chat_action(
+            message.chat.id,
+            pyrogram.enums.ChatAction.CANCEL,
+        )
+
         raise e
     except Exception as e:
         await client.send_message(
@@ -268,6 +284,12 @@ async def quote_handler(
             text=f"Failed to generate quote: {e}",
             reply_to_message_id=message.id,
         )
+
+        await client.send_chat_action(
+            message.chat.id,
+            pyrogram.enums.ChatAction.CANCEL,
+        )
+
         raise e
 
     sticker_bytes = base64.b64decode(sticker_base64)
@@ -278,4 +300,9 @@ async def quote_handler(
         chat_id=message.chat.id,
         sticker=sticker,
         reply_to_message_id=message.id,
+    )
+
+    await client.send_chat_action(
+        message.chat.id,
+        pyrogram.enums.ChatAction.CANCEL,
     )

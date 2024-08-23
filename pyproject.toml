@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "punquote"
 dynamic = ["version"]
 dependencies = [
-    "httpx==0.27.0",
+    "aiohttp==3.10.5",
     "pydantic-settings==2.4.0",
     "pyrogram==2.0.106",
     "python-dotenv==1.0.1",
@@ -58,7 +58,8 @@ select = [
     "W",      # pycodestyle warnings
 ]
 ignore = [
-    "B904",  # Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` (Ignoring exception traceback)
+    "S310",  # Audit URL open for permitted schemes. Allowing use of `file:` or custom schemes is often unexpected
+    "B904",  # Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None`
 ]
 
 [tool.ruff.lint.isort]
