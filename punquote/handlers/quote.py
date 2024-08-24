@@ -53,16 +53,24 @@ def _get_start_and_end_message_ids(
     return message_start_id, message_end_id
 
 
+def cancel_chat_action(func):
+    async def wrapped(client, message):
+        try:
+            await func(client, message)
+        except Exception:
+            await message.reply_chat_action(pyrogram.enums.ChatAction.CANCEL)
+            raise
+
+    return wrapped
+
+
+@cancel_chat_action
 async def quote_handler(
     client: pyrogram.Client,
     message: pyrogram.types.Message,
 ):
     if not message.reply_to_message_id:
-        await client.send_message(
-            chat_id=message.chat.id,
-            text="Command must be sent as a reply to a message",
-            reply_to_message_id=message.id,
-        )
+        await message.reply("Command must be sent as a reply to a message")
         return
 
     message_count, preserve_replies, preserve_media = _parse_command_arguments(
@@ -83,10 +91,7 @@ async def quote_handler(
     if not messages_to_quote:
         return
 
-    await client.send_chat_action(
-        message.chat.id,
-        pyrogram.enums.ChatAction.CHOOSE_STICKER,
-    )
+    await message.reply_chat_action(pyrogram.enums.ChatAction.CHOOSE_STICKER)
 
     try:
         sticker_base64 = await quotly.generate_sticker(
@@ -94,51 +99,18 @@ async def quote_handler(
             preserve_media=preserve_media,
         )
     except quotly.QuotlyServerError as e:
-        await client.send_message(
-            chat_id=message.chat.id,
-            text=f"Quotly server error. Code {e.error_code}: {e.error_message}",
-            reply_to_message_id=message.id,
+        await message.reply(
+            f"Quotly server error. Code {e.error_code}: {e.error_message}",
         )
-
-        await client.send_chat_action(
-            message.chat.id,
-            pyrogram.enums.ChatAction.CANCEL,
-        )
-
         raise e
     except Exception as e:
-        await client.send_message(
-            chat_id=message.chat.id,
-            text=f"Failed to generate quote: {e}",
-            reply_to_message_id=message.id,
-        )
-
-        await client.send_chat_action(
-            message.chat.id,
-            pyrogram.enums.ChatAction.CANCEL,
-        )
-
+        await message.reply(f"Failed to generate quote: {e}")
         raise e
 
     if not sticker_base64:
-        await client.send_chat_action(
-            message.chat.id,
-            pyrogram.enums.ChatAction.CANCEL,
-        )
-
         return
 
     sticker_bytes = base64.b64decode(sticker_base64)
     sticker = io.BytesIO(sticker_bytes)
     sticker.name = "sticker.webp"
-
-    await client.send_sticker(
-        chat_id=message.chat.id,
-        sticker=sticker,
-        reply_to_message_id=message.id,
-    )
-
-    await client.send_chat_action(
-        message.chat.id,
-        pyrogram.enums.ChatAction.CANCEL,
-    )
+    await message.reply_sticker(sticker)

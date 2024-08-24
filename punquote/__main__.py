@@ -1,5 +1,11 @@
-from . import bot
+import mode
+
+from . import app
 
 if __name__ == "__main__":
-    app = bot.get_bot()
-    app.run()
+    worker = mode.Worker(
+        app.PunquoteService(),
+        loglevel="INFO",
+    )
+
+    worker.execute_from_commandline()

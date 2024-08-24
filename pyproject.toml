@@ -7,6 +7,8 @@ name = "punquote"
 dynamic = ["version"]
 dependencies = [
     "aiohttp==3.10.5",
+    "mode-streaming==0.4.1",
+    "orjson==3.10.7",
     "pydantic-settings==2.4.0",
     "pyrogram==2.0.106",
     "python-dotenv==1.0.1",
@@ -15,7 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "ruff==0.6.1",
+    "ruff==0.6.2",
 ]
 
 [tool.setuptools.dynamic]
