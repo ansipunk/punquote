@@ -63,18 +63,47 @@ def _get_start_and_end_message_ids(
     return message_start_id, message_end_id
 
 
+def _get_message_author_chat_type(chat_type: pyrogram.enums.ChatType) -> str:
+    chat_type_mapping = {
+        pyrogram.enums.ChatType.PRIVATE: "private",
+        pyrogram.enums.ChatType.BOT: "bot",
+        pyrogram.enums.ChatType.GROUP: "group",
+        pyrogram.enums.ChatType.SUPERGROUP: "supergroup",
+        pyrogram.enums.ChatType.CHANNEL: "channel",
+    }
+
+    return chat_type_mapping[chat_type]
+
+
 def _prepare_message_author(message: pyrogram.types.Message) -> dict:
-    author = message.forward_from if message.forward_from else message.from_user
+    if message.forward_sender_name:
+        return {
+            "id": 1,
+            "name": message.forward_sender_name,
+            "type": "private",
+        }
+
+    prepared_author = {}
+
+    if message.forward_from:
+        author = message.forward_from
+    elif message.forward_from_chat:
+        author = message.forward_from_chat
+        prepared_author["type"] = _get_message_author_chat_type(
+            message.forward_from_chat.type,
+        )
+    else:
+        author = message.from_user
+
+    if "type" not in prepared_author:
+        prepared_author["type"] = "bot" if author.is_bot else "private"
 
     name = author.first_name
     if author.last_name:
         name = f"{name} {author.last_name}"
 
-    prepared_author = {
-        "id": author.id,
-        "name": name,
-        "type": "public",
-    }
+    prepared_author["id"] = author.id
+    prepared_author["name"] = name
 
     if author.photo:
         prepared_author["photo"] = {
@@ -123,6 +152,54 @@ def _prepare_message_media(
     return media_type, media
 
 
+def _prepare_message_entities_get_entity_type(
+    entity_type: pyrogram.types.MessageEntity,
+) -> str:
+    _entity_type_mapping = {
+        pyrogram.enums.MessageEntityType.MENTION: "mention",
+        pyrogram.enums.MessageEntityType.HASHTAG: "hashtag",
+        pyrogram.enums.MessageEntityType.CASHTAG: "cashtag",
+        pyrogram.enums.MessageEntityType.BOT_COMMAND: "bot_command",
+        pyrogram.enums.MessageEntityType.URL: "url",
+        pyrogram.enums.MessageEntityType.EMAIL: "email",
+        pyrogram.enums.MessageEntityType.PHONE_NUMBER: "phone_number",
+        pyrogram.enums.MessageEntityType.BOLD: "bold",
+        pyrogram.enums.MessageEntityType.ITALIC: "italic",
+        pyrogram.enums.MessageEntityType.UNDERLINE: "underline",
+        pyrogram.enums.MessageEntityType.STRIKETHROUGH: "strikethrough",
+        pyrogram.enums.MessageEntityType.SPOILER: "spoiler",
+        pyrogram.enums.MessageEntityType.CODE: "code",
+        pyrogram.enums.MessageEntityType.PRE: "pre",
+        pyrogram.enums.MessageEntityType.BLOCKQUOTE: "blockquote",
+        pyrogram.enums.MessageEntityType.TEXT_LINK: "text_link",
+        pyrogram.enums.MessageEntityType.TEXT_MENTION: "text_mention",
+        pyrogram.enums.MessageEntityType.BANK_CARD: "bank_card",
+        pyrogram.enums.MessageEntityType.CUSTOM_EMOJI: "custom_emoji",
+        pyrogram.enums.MessageEntityType.UNKNOWN: "unknown",
+    }
+
+    return _entity_type_mapping[entity_type]
+
+
+def _prepare_message_entities(
+    entities: list[pyrogram.types.MessageEntity] | None,
+) -> list[dict] | None:
+    if not entities:
+        return None
+
+    return [
+        {
+            "type": _prepare_message_entities_get_entity_type(entity.type),
+            "offset": entity.offset,
+            "length": entity.length,
+            "url": entity.url,
+            "language": entity.language,
+            "custom_emoji_id": entity.custom_emoji_id,
+        }
+        for entity in entities if entity
+    ]
+
+
 def _prepare_message(
     message: pyrogram.types.Message,
     *,
@@ -150,6 +227,15 @@ def _prepare_message(
 
     if text:
         prepared_message["text"] = text
+        prepared_message["entities"] = _prepare_message_entities(
+            message.entities,
+        )
+
+    if message.caption:
+        prepared_message["text"] = message.caption
+        prepared_message["entities"] = _prepare_message_entities(
+            message.caption_entities,
+        )
 
     if media and media_type:
         prepared_message["media"] = media
@@ -185,7 +271,7 @@ async def _get_base64_sticker_from_quotly_api(
         "format": "webp",
         "width": 512,
         "height": 512,
-        "scale": 1,
+        "scale": 2,
         "messages": messages_to_quote,
     }
 
@@ -291,6 +377,14 @@ async def quote_handler(
         )
 
         raise e
+
+    if not sticker_base64:
+        await client.send_chat_action(
+            message.chat.id,
+            pyrogram.enums.ChatAction.CANCEL,
+        )
+
+        return
 
     sticker_bytes = base64.b64decode(sticker_base64)
     sticker = io.BytesIO(sticker_bytes)
