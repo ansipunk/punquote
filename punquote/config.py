@@ -1,6 +1,16 @@
 import pydantic_settings
 
 
+class DatabaseConfig(pydantic_settings.BaseSettings):
+    url: str = ":memory:"
+
+    model_config = pydantic_settings.SettingsConfigDict(
+        env_file=".env",
+        env_prefix="PQ_DATABASE_",
+        extra="ignore",
+    )
+
+
 class QuotlyConfig(pydantic_settings.BaseSettings):
     url: str = "https://bot.lyo.su/quote/generate"
 
@@ -19,10 +29,11 @@ class TelegramConfig(pydantic_settings.BaseSettings):
 
     model_config = pydantic_settings.SettingsConfigDict(
         env_file=".env",
-        env_prefix="PQ_",
+        env_prefix="PQ_TELEGRAM_",
         extra="ignore",
     )
 
 
+database = DatabaseConfig()
 quotly = QuotlyConfig()
 telegram = TelegramConfig()

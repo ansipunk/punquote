@@ -6,6 +6,7 @@ import pyrogram.filters
 import pyrogram.handlers
 
 from . import config
+from . import database
 from . import handlers
 
 
@@ -37,8 +38,14 @@ class PunquoteService(mode.Service):
         self.bot = get_bot()
 
     async def on_start(self) -> None:
+        self._log_mundane("Connecting the database...")
+        await database.connect()
+        self._log_mundane("Running migrations...")
+        await database.migrate()
+
         await self.bot.start()
-        self._log_mundane("Started")
+        self._log_mundane("Ready")
 
     async def on_stop(self) -> None:
         await self.bot.stop()
+        await database.disconnect()
